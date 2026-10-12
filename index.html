@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PWメモ">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#EEF6E3">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>パスワードメモ</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:#EEF6E3;color:#173404;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;font-size:17px;line-height:1.5}
+#app{max-width:520px;margin:0 auto;min-height:100vh;min-height:100dvh;padding:calc(14px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column}
+h1{font-size:28px;font-weight:600;margin:4px 0 14px}
+h1.t2{font-size:24px;word-break:break-all}
+h2{font-size:18px;font-weight:600;margin:22px 0 8px}
+button{font:inherit;cursor:pointer}
+input,textarea,select{font:inherit;font-size:17px;color:#173404;background:#fff;border:2px solid #97C459;border-radius:10px;padding:10px 12px;width:100%;min-height:46px}
+input:focus,textarea:focus,select:focus{outline:none;border-color:#27500A}
+textarea{min-height:110px;resize:vertical}
+.mask{-webkit-text-security:disc}
+.top{display:flex;justify-content:space-between;align-items:center;min-height:44px;margin-bottom:4px}
+.nav{background:none;border:none;color:#27500A;font-weight:600;font-size:17px;display:flex;align-items:center;gap:2px;padding:8px 4px;min-height:44px}
+.card{background:#fff;border:1.5px solid #B7D98A;border-radius:14px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:14px;border-bottom:1px solid #DDEBC8;min-height:56px;width:100%;background:none;border-left:none;border-right:none;border-top:none;text-align:left;color:#173404}
+.card>.row:last-child{border-bottom:none}
+.row .sub{font-size:14px;color:#3B6D11}
+.row .grow{flex:1;min-width:0;word-break:break-all}
+.cnt{color:#3B6D11;font-weight:600;white-space:nowrap}
+.fld{background:#fff;border:1.5px solid #B7D98A;border-radius:14px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.fld .grow{flex:1;min-width:0}
+.fl{font-size:14px;color:#3B6D11;font-weight:600}
+.fv{font-size:18px;word-break:break-all;margin-top:2px;white-space:pre-wrap}
+.btns{display:flex;gap:8px;flex-shrink:0}
+.ib{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0}
+.ib.cp{background:#27500A;color:#fff;border:2px solid #27500A}
+.ib.eye{background:#fff;color:#27500A;border:2.5px solid #27500A}
+.btn{background:#3B6D11;color:#fff;border:2px solid #27500A;border-radius:12px;min-height:50px;padding:0 16px;font-weight:600;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn.alt{background:#fff;color:#27500A}
+.btn.danger{background:#fff;color:#A32D2D;border-color:#A32D2D}
+.act{background:none;border:none;color:#27500A;font-weight:600;display:flex;align-items:center;gap:6px;padding:10px 4px;min-height:46px}
+.foot{margin-top:auto;padding-top:18px;display:flex;justify-content:space-between}
+.banner{background:#FAEEDA;border:1.5px solid #EF9F27;color:#412402;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:15px}
+.banner.red{background:#FCEBEB;border-color:#E24B4A;color:#501313}
+.note{font-size:14px;color:#3B6D11;margin:8px 0}
+.err{color:#A32D2D;font-weight:600;min-height:24px;margin:6px 0}
+.center{margin:auto 0;display:flex;flex-direction:column;gap:12px;align-items:stretch;text-align:center;padding-bottom:12vh}
+.center .ic{color:#3B6D11;display:flex;justify-content:center}
+.lbl{font-size:14px;color:#3B6D11;font-weight:600;margin:12px 0 4px;display:block}
+.toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#173404;color:#fff;padding:11px 18px;border-radius:24px;font-size:15px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:10;max-width:90%;text-align:center}
+.toast.on{opacity:1}
+.empty{padding:22px 14px;color:#3B6D11;text-align:center}
+.tools{display:flex;gap:8px;margin:0 0 14px}
+.tools .btn{min-height:48px;padding:0 10px;font-size:16px}
+.ib.sm{width:42px;height:42px;border-width:2px;border-radius:10px}
+.ib:disabled{opacity:.3;cursor:default}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+var LS_KEY='pwmemo.data', LS_PREV='pwmemo.prev', LS_PRE='pwmemo.preimport', LS_META='pwmemo.meta';
+var ITER=600000;
+var enc=new TextEncoder(), dec=new TextDecoder();
+var app=document.getElementById('app');
+var sess=null, view={n:'boot'}, pendingEnv=null, editFolders=false, editItems=false;
+var saveTimer=null, saveChain=Promise.resolve(), clipTimer=null, eyeTimer=null, toastTimer=null;
+var meta={lastBackup:null,dirty:false,fails:0,until:0};
+var unlocking=false;
+
+var IC={
+ copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+ eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+ eyeoff:'<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
+ back:'<polyline points="15 18 9 12 15 6"/>',
+ folder:'<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+ plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+ up:'<polyline points="18 15 12 9 6 15"/>',
+ down:'<polyline points="6 9 12 15 18 9"/>',
+ trash:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2"/>',
+ shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+ lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
+};
+function svg(n,s){s=s||22;return '<svg viewBox="0 0 24 24" width="'+s+'" height="'+s+'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+IC[n]+'</svg>'}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function uid(){var a=new Uint8Array(8);crypto.getRandomValues(a);return Array.prototype.map.call(a,function(x){return ('0'+x.toString(16)).slice(-2)}).join('')}
+function b64(buf){var a=new Uint8Array(buf),s='';for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s)}
+function unb64(s){var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+function el(id){return document.getElementById(id)}
+function val(id){var e=el(id);return e?e.value:''}
+
+function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
+function lsSet(k,v){localStorage.setItem(k,v)}
+function loadMeta(){try{var m=JSON.parse(lsGet(LS_META)||'{}');meta.lastBackup=m.lastBackup||null;meta.dirty=!!m.dirty;meta.fails=m.fails|0;meta.until=m.until|0}catch(e){}}
+function saveMeta(){try{lsSet(LS_META,JSON.stringify(meta))}catch(e){}}
+
+function toast(m){var t=el('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('on')},1800)}
+
+async function deriveKey(pw,salt,iter){
+ var m=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function encryptState(s){
+ var iv=crypto.getRandomValues(new Uint8Array(12));
+ var ct=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},s.key,enc.encode(JSON.stringify(s.state)));
+ return JSON.stringify({app:'pwmemo',v:1,kdf:'PBKDF2-SHA256',iter:s.iter,salt:s.salt,iv:b64(iv),data:b64(ct)});
+}
+async function decryptEnvelope(env,pw){
+ if(!env||env.app!=='pwmemo'||!env.salt||!env.iv||!env.data)throw new Error('format');
+ var iter=env.iter|0;
+ if(iter<100000||iter>3000000)throw new Error('format');
+ var key=await deriveKey(pw,unb64(env.salt),iter);
+ var pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(env.iv)},key,unb64(env.data));
+ return {state:normalize(JSON.parse(dec.decode(pt))),key:key,salt:env.salt,iter:iter};
+}
+function normalize(st){
+ st=st&&typeof st==='object'?st:{};
+ var folders=Array.isArray(st.folders)?st.folders.filter(function(f){return f&&f.id}).map(function(f){return {id:String(f.id),name:String(f.name==null?'':f.name)}}):[];
+ if(!folders.length)folders.push({id:uid(),name:'フォルダ'});
+ var ids={};folders.forEach(function(f){ids[f.id]=1});
+ var items=Array.isArray(st.items)?st.items.filter(function(i){return i&&i.id}).map(function(i){
+  return {id:String(i.id),folderId:ids[i.folderId]?i.folderId:folders[0].id,service:String(i.service||''),account:String(i.account||''),pw:String(i.pw||''),memo:String(i.memo||'')};
+ }):[];
+ return {v:1,folders:folders,items:items};
+}
+
+async function doSave(){
+ var s=sess;if(!s)return;
+ try{
+  var blob=await encryptState(s);
+  var cur=lsGet(LS_KEY);
+  if(cur)lsSet(LS_PREV,cur);
+  lsSet(LS_KEY,blob);
+  if(lsGet(LS_KEY)!==blob)throw new Error('verify');
+  s.unsaved=false;
+  var ban=el('saveerr');if(ban)ban.remove();
+ }catch(e){
+  s.unsaved=true;
+  toast('保存に失敗しました。バックアップを書き出してください');
+  throw e;
+ }
+}
+function persist(){saveChain=saveChain.then(doSave,doSave);return saveChain.catch(function(){})}
+function schedulePersist(){
+ meta.dirty=true;saveMeta();
+ clearTimeout(saveTimer);saveTimer=setTimeout(function(){saveTimer=null;persist()},350);
+}
+function persistNow(){clearTimeout(saveTimer);saveTimer=null;meta.dirty=true;saveMeta();return persist()}
+
+function lockNow(){
+ if(!sess)return;
+ clearTimeout(saveTimer);saveTimer=null;
+ clearTimeout(clipTimer);clipTimer=null;
+ clearTimeout(eyeTimer);eyeTimer=null;
+ var s=sess;
+ persist().then(function(){if(sess===s&&!s.unsaved)sess=null});
+ pendingEnv=null;editFolders=false;
+ view={n:'lock'};render();
+}
+
+function folderOf(id){return sess.state.folders.filter(function(f){return f.id===id})[0]}
+function itemOf(id){return sess.state.items.filter(function(i){return i.id===id})[0]}
+function itemsIn(fid){return sess.state.items.filter(function(i){return i.folderId===fid})}
+function moveIn(arr,id,dir,same){
+ var idx=[];arr.forEach(function(x,i){if(same(x))idx.push(i)});
+ var p=-1;idx.forEach(function(ai,k){if(arr[ai].id===id)p=k});
+ var q=p+dir;if(p<0||q<0||q>=idx.length)return false;
+ var a=idx[p],b=idx[q],t=arr[a];arr[a]=arr[b];arr[b]=t;return true;
+}
+function isEmptyItem(i){return !i.service&&!i.account&&!i.pw&&!i.memo}
+function dropEmpty(){sess.state.items=sess.state.items.filter(function(i){return !isEmptyItem(i)})}
+function fmtDate(iso){try{var d=new Date(iso);return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'}catch(e){return ''}}
+function ymd(){var d=new Date();function p(n){return ('0'+n).slice(-2)}return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())}
+function isStandalone(){return window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)}
+
+function bannerBackup(){
+ if(!sess||!sess.state.items.length)return '';
+ if(!meta.lastBackup)return '<div class="banner">まだバックアップがありません。「バックアップ」から書き出してください。</div>';
+ var days=Math.floor((Date.now()-new Date(meta.lastBackup).getTime())/86400000);
+ if(meta.dirty&&days>=7)return '<div class="banner">最後のバックアップから'+days+'日たっています。書き出しをおすすめします。</div>';
+ return '';
+}
+
+function vBoot(){return ''}
+function vNoCrypto(){return '<div class="center"><h1>使えません</h1><div class="banner red">この環境では暗号化機能が使えないため、データを保存しません。https:// のアドレスで、Safariから開き直してください。</div></div>'}
+function vSetup(){
+ var h='<div class="center"><div class="ic">'+svg('lock',48)+'</div><h1 style="margin:0">はじめの設定</h1><div class="note" style="text-align:left">アプリを開くときのマスターパスワードを決めてください。忘れると誰にも復元できません。</div>';
+ if(!isStandalone())h+='<div class="banner red" style="text-align:left">先に「共有ボタン → ホーム画面に追加」を行い、ホーム画面のアイコンから開いてください。ブラウザで入力したデータは、ホーム画面のアプリには引き継がれません。</div>';
+ h+='<label class="lbl" style="text-align:left" for="p1">マスターパスワード（数字4桁）</label><input id="p1" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus>';
+ h+='<label class="lbl" style="text-align:left" for="p2">もう一度入力</label><input id="p2" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-enter="setup">';
+ h+='<div class="err" id="err"></div><button class="btn" data-a="setup">設定してはじめる</button></div>';
+ return h;
+}
+function vLock(){
+ var h='<div class="center"><div class="ic">'+svg('lock',52)+'</div><h1 style="margin:0">パスワードメモ</h1>';
+ if(!isStandalone())h+='<div class="banner red" style="text-align:left">ブラウザで開いています。ホーム画面のアイコンから開かないと、保存したデータが見えません。</div>';
+ h+='<input id="pw" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="数字4桁" style="text-align:center;font-size:24px;letter-spacing:.3em" data-focus data-enter="unlock" aria-label="マスターパスワード">';
+ h+='<div class="err" id="err" role="alert"></div><button class="btn" id="ubtn" data-a="unlock">ひらく</button>';
+ h+='<button class="act" style="justify-content:center;font-weight:500;font-size:14px" data-a="tryPrev">開けない場合：ひとつ前の保存データで試す</button></div>';
+ return h;
+}
+function vFolders(){
+ var f=sess.state.folders;
+ var h='<div class="top"><h1 style="margin:0">フォルダ</h1><button class="nav" data-a="toggleEdit">'+(editFolders?'完了':'編集')+'</button></div>';
+ h+='<div class="tools"><button class="btn alt" data-a="newFolder">'+svg('plus',20)+'新規フォルダ</button><button class="btn alt" data-a="settings">'+svg('shield',20)+'バックアップ・設定</button></div>';
+ h+=bannerBackup();
+ if(editFolders)h+='<div class="note" style="margin-top:0">名前を直接書き換えられます。▲▼で順番を入れ替えます。</div>';
+ h+='<div class="card">';
+ f.forEach(function(x,k){
+  if(editFolders){
+   h+='<div class="row" style="cursor:default;gap:6px"><input value="'+esc(x.name)+'" data-f="fname" data-id="'+x.id+'" aria-label="フォルダ名" autocomplete="off" autocapitalize="off" spellcheck="false" style="min-width:0">'
+    +'<button class="ib eye sm" data-a="moveFolder" data-id="'+x.id+'" data-d="-1" aria-label="上へ"'+(k===0?' disabled':'')+'>'+svg('up',20)+'</button>'
+    +'<button class="ib eye sm" data-a="moveFolder" data-id="'+x.id+'" data-d="1" aria-label="下へ"'+(k===f.length-1?' disabled':'')+'>'+svg('down',20)+'</button>'
+    +'<button class="ib eye sm" style="border-color:#A32D2D;color:#A32D2D" data-a="delFolder" data-id="'+x.id+'" aria-label="フォルダを削除">'+svg('trash',20)+'</button></div>';
+  }else{
+   var n=itemsIn(x.id).length;
+   h+='<button class="row" data-a="openFolder" data-id="'+x.id+'"><span style="color:#3B6D11">'+svg('folder')+'</span><span class="grow">'+esc(x.name||'（名称未設定）')+'</span><span class="cnt">'+n+' ›</span></button>';
+  }
+ });
+ h+='</div>';
+ return h;
+}
+function vItems(){
+ var fo=folderOf(view.fid);if(!fo){view={n:'folders'};return vFolders()}
+ var list=itemsIn(fo.id);
+ var h='<div class="top"><button class="nav" data-a="toFolders">'+svg('back',20)+'フォルダ</button>'+(list.length>1?'<button class="nav" data-a="toggleItemsEdit">'+(editItems?'完了':'並べ替え')+'</button>':'')+'</div><h1>'+esc(fo.name||'（名称未設定）')+'</h1>';
+ h+='<div class="tools"><button class="btn alt" data-a="newItem">'+svg('plus',20)+'新規項目</button></div>';
+ if(!list.length)h+='<div class="card"><div class="empty">まだ項目がありません</div></div>';
+ else{
+  h+='<div class="card">';
+  list.forEach(function(i,k){
+   if(editItems&&list.length>1){
+    h+='<div class="row" style="cursor:default;gap:6px"><span class="grow"><div>'+esc(i.service||'（名称未設定）')+'</div><div class="sub">'+esc(i.account)+'</div></span>'
+     +'<button class="ib eye sm" data-a="moveItem" data-id="'+i.id+'" data-d="-1" aria-label="上へ"'+(k===0?' disabled':'')+'>'+svg('up',20)+'</button>'
+     +'<button class="ib eye sm" data-a="moveItem" data-id="'+i.id+'" data-d="1" aria-label="下へ"'+(k===list.length-1?' disabled':'')+'>'+svg('down',20)+'</button></div>';
+   }else{
+    h+='<button class="row" data-a="openItem" data-id="'+i.id+'"><span class="grow"><div>'+esc(i.service||'（名称未設定）')+'</div><div class="sub">'+esc(i.account)+'</div></span><span class="cnt">›</span></button>';
+   }
+  });
+  h+='</div>';
+ }
+ return h;
+}
+function vDetail(){
+ var it=itemOf(view.iid);if(!it){view={n:'folders'};return vFolders()}
+ if(view.edit)return vEdit(it);
+ var h='<div class="top"><button class="nav" data-a="backItem">'+svg('back',20)+'戻る</button><button class="nav" data-a="edit">編集</button></div>';
+ h+='<h1 class="t2">'+esc(it.service||'（名称未設定）')+'</h1>';
+ h+='<div class="fld"><div class="grow"><div class="fl">アカウント名 / ID</div><div class="fv">'+(it.account?esc(it.account):'—')+'</div></div><div class="btns"><button class="ib cp" data-a="copy" data-k="account" aria-label="IDをコピー">'+svg('copy')+'</button></div></div>';
+ h+='<div class="fld"><div class="grow"><div class="fl">パスワード</div><div class="fv" id="pwv">'+(it.pw?'••••••••':'—')+'</div></div><div class="btns"><button class="ib eye" id="eyebtn" data-a="eye" aria-label="パスワードを確認">'+svg('eye')+'</button><button class="ib cp" data-a="copy" data-k="pw" aria-label="パスワードをコピー">'+svg('copy')+'</button></div></div>';
+ h+='<div class="fld" style="align-items:flex-start"><div class="grow"><div class="fl">メモ</div><div class="fv">'+(it.memo?esc(it.memo):'—')+'</div></div></div>';
+ h+='<div class="foot"><button class="act" style="color:#A32D2D" data-a="delItem">'+svg('trash',20)+'この項目を削除</button></div>';
+ return h;
+}
+function vEdit(it){
+ var h='<div class="top"><span class="fl">編集中（自動で保存されます）</span><button class="nav" data-a="done">完了</button></div>';
+ h+='<label class="lbl" for="e_service">サービス名</label><input id="e_service" data-f="service" value="'+esc(it.service)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus>';
+ h+='<label class="lbl" for="e_account">アカウント名 / ID</label><input id="e_account" data-f="account" value="'+esc(it.account)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
+ h+='<label class="lbl" for="e_pw">パスワード</label><input id="e_pw" class="mask" data-f="pw" value="'+esc(it.pw)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
+ h+='<label class="lbl" for="e_memo">メモ</label><textarea id="e_memo" data-f="memo" autocomplete="off" spellcheck="false">'+esc(it.memo)+'</textarea>';
+ h+='<label class="lbl" for="e_folder">フォルダ</label><select id="e_folder" data-f="folderId">';
+ sess.state.folders.forEach(function(f){h+='<option value="'+f.id+'"'+(f.id===it.folderId?' selected':'')+'>'+esc(f.name||'（名称未設定）')+'</option>'});
+ h+='</select>';
+ return h;
+}
+function vSettings(){
+ var st=sess.state;
+ var h='<div class="top"><button class="nav" data-a="toFolders">'+svg('back',20)+'フォルダ</button></div><h1>バックアップ・設定</h1>';
+ h+='<div class="fld" style="display:block"><div class="fl">保存されている件数</div><div class="fv">フォルダ '+st.folders.length+' ／ 項目 '+st.items.length+'</div></div>';
+ h+='<div class="fld" style="display:block"><div class="fl">最後にバックアップした日</div><div class="fv">'+(meta.lastBackup?esc(fmtDate(meta.lastBackup)):'まだありません')+'</div></div>';
+ h+='<button class="btn" data-a="export">バックアップを書き出す</button>';
+ h+='<div class="note">書き出したファイルは暗号化されています。共有画面で「ファイルに保存」を選び、iCloud Driveに保存してください。PCにも1つ置いておくと安心です。</div>';
+ h+='<h2>バックアップから復元</h2>';
+ if(!pendingEnv){
+  h+='<label class="btn alt" for="ifile" style="cursor:pointer">ファイルを選ぶ</label><input id="ifile" type="file" style="display:none" data-a="pickfile">';
+ }else{
+  h+='<label class="lbl" for="ipw">このバックアップを書き出したときのパスワード</label><input id="ipw" class="mask" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus data-enter="import">';
+  h+='<div class="err" id="err"></div><button class="btn" data-a="import">復元する</button><button class="btn alt" style="margin-top:8px" data-a="cancelImport">やめる</button>';
+ }
+ h+='<div class="note">復元すると今のデータは置き換わります。直前の状態は1つだけ保管され、戻すこともできます。</div>';
+ if(lsGet(LS_PRE))h+='<button class="btn alt" data-a="undoImport">復元する前の状態に戻す</button>';
+ h+='<h2>マスターパスワードの変更</h2>';
+ h+='<div class="banner">パスワードは数字4桁です。書き出したバックアップファイルは、他人に渡さないでください（4桁は総当たりで解読されます）。</div>';
+ var num='class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"';
+ h+='<label class="lbl" for="cp0">今のパスワード</label><input id="cp0" '+num+'>';
+ h+='<label class="lbl" for="cp1">新しいパスワード（数字4桁）</label><input id="cp1" '+num+'>';
+ h+='<label class="lbl" for="cp2">新しいパスワード（もう一度）</label><input id="cp2" '+num+'>';
+ h+='<div class="err" id="err2"></div><button class="btn alt" data-a="changePw">パスワードを変更</button>';
+ h+='<div class="note">変更しても、変更前に書き出したバックアップは古いパスワードのままです。</div>';
+ return h;
+}
+
+function render(){
+ var h='';
+ if(view.n!=='items')editItems=false;
+ if(view.n!=='folders')editFolders=false;
+ switch(view.n){
+  case 'nocrypto':h=vNoCrypto();break;
+  case 'setup':h=vSetup();break;
+  case 'lock':h=vLock();break;
+  case 'folders':h=vFolders();break;
+  case 'items':h=vItems();break;
+  case 'detail':h=vDetail();break;
+  case 'settings':h=vSettings();break;
+  default:h=vBoot();
+ }
+ app.innerHTML=h;
+ var f=app.querySelector('[data-focus]');if(f){try{f.focus()}catch(e){}}
+ window.scrollTo(0,0);
+}
+
+function setErr(id,m){var e=el(id);if(e)e.textContent=m||''}
+
+async function actSetup(){
+ var p1=val('p1'),p2=val('p2');
+ if(!/^\d{4}$/.test(p1)){setErr('err','数字4桁で入力してください');return}
+ if(p1!==p2){setErr('err','2回の入力が一致しません');return}
+ setErr('err','暗号化の準備中…');
+ try{
+  var salt=crypto.getRandomValues(new Uint8Array(16));
+  var key=await deriveKey(p1,salt,ITER);
+  sess={key:key,salt:b64(salt),iter:ITER,weak:p1.length<8,unsaved:false,
+   state:{v:1,folders:[{id:uid(),name:'会社用'},{id:uid(),name:'ゲーム用'}],items:[]}};
+  await doSave();
+  meta.lastBackup=null;meta.dirty=false;saveMeta();
+  view={n:'folders'};render();
+ }catch(e){sess=null;setErr('err','保存できませんでした。保存領域が使えない可能性があります。')}
+}
+async function actUnlock(usePrev){
+ var pw=val('pw');
+ if(!pw){setErr('err','パスワードを入力してください');return}
+ if(meta.until&&Date.now()<meta.until){
+  setErr('err','間違いが続いたため、'+Math.ceil((meta.until-Date.now())/60000)+'分後にもう一度お試しください');
+  var w=el('pw');if(w)w.value='';return;
+ }
+ if(unlocking)return;
+ unlocking=true;
+ var raw=usePrev?lsGet(LS_PREV):(lsGet(LS_KEY)||lsGet(LS_PREV));
+ if(!raw){unlocking=false;setErr('err','保存データが見つかりません');return}
+ var b=el('ubtn');if(b)b.disabled=true;
+ setErr('err','確認中…');
+ try{
+  var env;try{env=JSON.parse(raw)}catch(e){throw new Error('format')}
+  var r=await decryptEnvelope(env,pw);
+  if(sess&&sess.unsaved){
+   sess.key=r.key;sess.salt=r.salt;sess.iter=r.iter;
+  }else{
+   sess={key:r.key,salt:r.salt,iter:r.iter,state:r.state,unsaved:false};
+  }
+  sess.weak=pw.length<8;
+  meta.fails=0;meta.until=0;saveMeta();
+  if(usePrev)await persistNow();
+  dropEmpty();
+  view={n:'folders'};editFolders=false;render();
+  if(sess.unsaved)persist();
+ }catch(e){
+  var bad=!(e&&e.message==='format');
+  if(bad){
+   meta.fails=(meta.fails||0)+1;
+   if(meta.fails%5===0){meta.until=Date.now()+5*60000}
+   saveMeta();
+  }
+  var rest=5-((meta.fails||0)%5);
+  setErr('err',bad?('パスワードが違います'+((meta.until&&Date.now()<meta.until)?'（5分間ロックします）':'（あと'+rest+'回で5分間ロック）')):'保存データを読み込めませんでした');
+  var i=el('pw');if(i){i.value='';i.focus()}
+  if(b)b.disabled=false;
+ }
+ unlocking=false;
+}
+
+function copyFallback(t){
+ var ta=document.createElement('textarea');ta.value=t;ta.setAttribute('readonly','');ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
+ document.body.appendChild(ta);ta.select();ta.setSelectionRange(0,t.length);
+ var ok=false;try{ok=document.execCommand('copy')}catch(e){}
+ ta.remove();return ok;
+}
+async function doCopy(text,label){
+ if(!text){toast('空のためコピーできません');return}
+ var ok=false;
+ try{await navigator.clipboard.writeText(text);ok=true}catch(e){ok=copyFallback(text)}
+ if(!ok){toast('コピーできませんでした');return}
+ toast(label+'をコピーしました');
+ clearTimeout(clipTimer);
+ clipTimer=setTimeout(function(){clipTimer=null;if(document.visibilityState==='visible'){try{navigator.clipboard.writeText(' ')}catch(e){}}},30000);
+}
+
+function hidePw(){
+ clearTimeout(eyeTimer);eyeTimer=null;
+ var v=el('pwv'),b=el('eyebtn');
+ if(!v||!b||!sess||view.n!=='detail')return;
+ var it=itemOf(view.iid);
+ v.textContent=it&&it.pw?'••••••••':'—';b.innerHTML=svg('eye');b.dataset.on='';
+}
+function toggleEye(){
+ var v=el('pwv'),b=el('eyebtn'),it=itemOf(view.iid);
+ if(!v||!b||!it||!it.pw)return;
+ if(b.dataset.on==='1'){hidePw();return}
+ v.textContent=it.pw;b.innerHTML=svg('eyeoff');b.dataset.on='1';
+ clearTimeout(eyeTimer);eyeTimer=setTimeout(hidePw,15000);
+}
+
+async function actExport(){
+ var blob=lsGet(LS_KEY);
+ if(!blob){toast('保存データがありません');return}
+ var name='pwmemo-backup-'+ymd()+'.json';
+ try{
+  var file=new File([blob],name,{type:'application/json'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+   await navigator.share({files:[file],title:name});
+   meta.lastBackup=new Date().toISOString();meta.dirty=false;saveMeta();render();toast('バックアップを書き出しました');return;
+  }
+ }catch(e){
+  if(e&&e.name==='AbortError'){toast('キャンセルしました');return}
+ }
+ var url=URL.createObjectURL(new Blob([blob],{type:'application/json'}));
+ var a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+ setTimeout(function(){URL.revokeObjectURL(url)},15000);
+ meta.lastBackup=new Date().toISOString();meta.dirty=false;saveMeta();render();toast('ファイルを書き出しました');
+}
+async function actImport(){
+ var pw=val('ipw');
+ if(!pw){setErr('err','パスワードを入力してください');return}
+ setErr('err','確認中…');
+ var r;
+ try{r=await decryptEnvelope(pendingEnv,pw)}catch(e){setErr('err',e&&e.message==='format'?'バックアップファイルとして読み込めません':'パスワードが違います');return}
+ var cf=r.state.folders.length,ci=r.state.items.length;
+ var curI=sess.state.items.length;
+ if(!confirm('バックアップ（フォルダ'+cf+'・項目'+ci+'）で、今のデータ（項目'+curI+'）を置き換えます。よろしいですか？'))return;
+ var cur=lsGet(LS_KEY);if(cur){try{lsSet(LS_PRE,cur)}catch(e){}}
+ sess.state=r.state;
+ pendingEnv=null;
+ await persistNow();
+ view={n:'folders'};render();toast('復元しました');
+}
+async function actUndoImport(){
+ var raw=lsGet(LS_PRE);if(!raw)return;
+ var pw=prompt('今のマスターパスワードを入力してください');
+ if(pw==null)return;
+ try{
+  var r=await decryptEnvelope(JSON.parse(raw),pw);
+  if(!confirm('復元する前の状態（項目'+r.state.items.length+'）に戻します。よろしいですか？'))return;
+  sess.state=r.state;await persistNow();
+  view={n:'folders'};render();toast('元に戻しました');
+ }catch(e){toast('戻せませんでした（パスワードが違う可能性があります）')}
+}
+async function actChangePw(){
+ var p0=val('cp0'),p1=val('cp1'),p2=val('cp2');
+ if(!/^\d{4}$/.test(p1)){setErr('err2','新しいパスワードは数字4桁にしてください');return}
+ if(p1!==p2){setErr('err2','新しいパスワードが一致しません');return}
+ setErr('err2','確認中…');
+ try{
+  var raw=lsGet(LS_KEY);
+  await decryptEnvelope(JSON.parse(raw),p0);
+ }catch(e){setErr('err2','今のパスワードが違います');return}
+ try{
+  var salt=crypto.getRandomValues(new Uint8Array(16));
+  var key=await deriveKey(p1,salt,ITER);
+  sess.key=key;sess.salt=b64(salt);sess.iter=ITER;sess.weak=p1.length<8;
+  await persistNow();
+  try{localStorage.removeItem(LS_PREV);localStorage.removeItem(LS_PRE)}catch(e){}
+  render();toast('パスワードを変更しました');
+ }catch(e){setErr('err2','変更に失敗しました。もう一度お試しください')}
+}
+
+app.addEventListener('click',function(ev){
+ var t=ev.target.closest('[data-a]');if(!t||!app.contains(t))return;
+ var a=t.dataset.a,id=t.dataset.id;
+ if(t.tagName==='INPUT')return;
+ switch(a){
+  case 'setup':actSetup();break;
+  case 'unlock':actUnlock(false);break;
+  case 'tryPrev':actUnlock(true);break;
+  case 'toggleEdit':editFolders=!editFolders;if(!editFolders)persistNow();render();break;
+  case 'openFolder':view={n:'items',fid:id};render();break;
+  case 'toggleItemsEdit':editItems=!editItems;if(!editItems)persistNow();render();break;
+  case 'moveFolder':
+   if(moveIn(sess.state.folders,id,+t.dataset.d,function(){return true})){persistNow();render()}break;
+  case 'moveItem':
+   var mf=view.fid;
+   if(moveIn(sess.state.items,id,+t.dataset.d,function(x){return x.folderId===mf})){persistNow();render()}break;
+  case 'newFolder':
+   sess.state.folders.push({id:uid(),name:'新しいフォルダ'});editFolders=true;persistNow();render();break;
+  case 'delFolder':
+   var fo=folderOf(id),n=itemsIn(id).length;
+   if(sess.state.folders.length<=1){toast('最後のフォルダは削除できません');break}
+   if(confirm('フォルダ「'+(fo?fo.name:'')+'」と、中の項目'+n+'件を削除します。元に戻せません。よろしいですか？')){
+    sess.state.folders=sess.state.folders.filter(function(f){return f.id!==id});
+    sess.state.items=sess.state.items.filter(function(i){return i.folderId!==id});
+    persistNow();render();
+   }
+   break;
+  case 'toFolders':persistNow();pendingEnv=null;view={n:'folders'};render();break;
+  case 'settings':persistNow().then(function(){view={n:'settings'};render()});break;
+  case 'openItem':view={n:'detail',iid:id,edit:false,fid:view.fid};render();break;
+  case 'newItem':
+   var ni={id:uid(),folderId:view.fid,service:'',account:'',pw:'',memo:''};
+   sess.state.items.push(ni);view={n:'detail',iid:ni.id,edit:true,fid:view.fid};render();break;
+  case 'backItem':
+   var it0=itemOf(view.iid);view={n:'items',fid:it0?it0.folderId:view.fid};render();break;
+  case 'edit':view.edit=true;render();break;
+  case 'done':
+   var it1=itemOf(view.iid);
+   if(it1&&isEmptyItem(it1)){sess.state.items=sess.state.items.filter(function(i){return i.id!==it1.id});view={n:'items',fid:it1.folderId};}
+   else{view.edit=false;}
+   persistNow();render();break;
+  case 'delItem':
+   var it2=itemOf(view.iid);
+   if(it2&&confirm('「'+(it2.service||'名称未設定')+'」を削除します。元に戻せません。よろしいですか？')){
+    sess.state.items=sess.state.items.filter(function(i){return i.id!==it2.id});
+    view={n:'items',fid:it2.folderId};persistNow();render();
+   }
+   break;
+  case 'copy':
+   var it3=itemOf(view.iid);if(it3)doCopy(it3[t.dataset.k],t.dataset.k==='pw'?'パスワード':'ID');break;
+  case 'eye':toggleEye();break;
+  case 'export':actExport();break;
+  case 'import':actImport();break;
+  case 'cancelImport':pendingEnv=null;render();break;
+  case 'undoImport':actUndoImport();break;
+  case 'changePw':actChangePw();break;
+ }
+});
+app.addEventListener('input',function(ev){
+ var t=ev.target;
+ if(t.id==='pw'){if(t.value.length>=4)actUnlock(false);return}
+ var f=t.dataset&&t.dataset.f;if(!f||!sess)return;
+ if(f==='fname'){var fo=folderOf(t.dataset.id);if(fo){fo.name=t.value;schedulePersist()}return}
+ var it=itemOf(view.iid);if(!it)return;
+ it[f]=t.value;schedulePersist();
+});
+app.addEventListener('change',function(ev){
+ var t=ev.target;
+ if(t.dataset&&t.dataset.a==='pickfile'&&t.files&&t.files[0]){
+  var rd=new FileReader();
+  rd.onload=function(){
+   try{var env=JSON.parse(String(rd.result));if(!env||env.app!=='pwmemo')throw 0;pendingEnv=env;render()}
+   catch(e){toast('バックアップファイルとして読み込めません')}
+  };
+  rd.onerror=function(){toast('ファイルを読み込めませんでした')};
+  rd.readAsText(t.files[0]);
+ }
+ if(t.dataset&&t.dataset.f==='folderId'&&sess){var it=itemOf(view.iid);if(it){it.folderId=t.value;schedulePersist()}}
+});
+app.addEventListener('keydown',function(ev){
+ if(ev.key!=='Enter')return;
+ var a=ev.target.dataset&&ev.target.dataset.enter;
+ if(a==='unlock')actUnlock(false);else if(a==='setup')actSetup();else if(a==='import')actImport();
+});
+
+document.addEventListener('visibilitychange',function(){if(document.hidden)lockNow()});
+window.addEventListener('pagehide',lockNow);
+
+(function boot(){
+ loadMeta();
+ if(!(window.crypto&&crypto.subtle)){view={n:'nocrypto'};render();return}
+ try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+ if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
+ view=(lsGet(LS_KEY)||lsGet(LS_PREV))?{n:'lock'}:{n:'setup'};
+ render();
+})();
+</script>
+</body>
+</html>
