@@ -128,7 +128,7 @@ function normalize(st){
  if(!folders.length)folders.push({id:uid(),name:'フォルダ'});
  var ids={};folders.forEach(function(f){ids[f.id]=1});
  var items=Array.isArray(st.items)?st.items.filter(function(i){return i&&i.id}).map(function(i){
-  return {id:String(i.id),folderId:ids[i.folderId]?i.folderId:folders[0].id,service:String(i.service||''),account:String(i.account||''),pw:String(i.pw||''),memo:String(i.memo||'')};
+  return {id:String(i.id),folderId:ids[i.folderId]?i.folderId:folders[0].id,type:i.type==='memo'?'memo':'login',service:String(i.service||''),account:String(i.account||''),pw:String(i.pw||''),memo:String(i.memo||'')};
  }):[];
  return {v:1,folders:folders,items:items};
 }
@@ -203,8 +203,8 @@ function vSetup(){
 function vLock(){
  var h='<div class="center"><div class="ic">'+svg('lock',52)+'</div><h1 style="margin:0">パスワードメモ</h1>';
  if(!isStandalone())h+='<div class="banner red" style="text-align:left">ブラウザで開いています。ホーム画面のアイコンから開かないと、保存したデータが見えません。</div>';
- h+='<input id="pw" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="数字4桁" style="text-align:center;font-size:24px;letter-spacing:.3em" data-focus data-enter="unlock" aria-label="マスターパスワード">';
- h+='<div class="err" id="err" role="alert"></div><button class="btn" id="ubtn" data-a="unlock">ひらく</button>';
+ h+='<input id="pw" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="text-align:center;font-size:24px;letter-spacing:.3em" data-focus data-enter="unlock" aria-label="マスターパスワード">';
+ h+='<div class="err" id="err" role="alert"></div>';
  h+='<button class="act" style="justify-content:center;font-weight:500;font-size:14px" data-a="tryPrev">開けない場合：ひとつ前の保存データで試す</button></div>';
  return h;
 }
@@ -239,34 +239,52 @@ function vItems(){
   h+='<div class="card">';
   list.forEach(function(i,k){
    if(editItems&&list.length>1){
-    h+='<div class="row" style="cursor:default;gap:6px"><span class="grow"><div>'+esc(i.service||'（名称未設定）')+'</div><div class="sub">'+esc(i.account)+'</div></span>'
+    h+='<div class="row" style="cursor:default;gap:6px"><span class="grow"><div>'+esc(i.service||'（名称未設定）')+'</div><div class="sub">'+esc(subOf(i))+'</div></span>'
      +'<button class="ib eye sm" data-a="moveItem" data-id="'+i.id+'" data-d="-1" aria-label="上へ"'+(k===0?' disabled':'')+'>'+svg('up',20)+'</button>'
      +'<button class="ib eye sm" data-a="moveItem" data-id="'+i.id+'" data-d="1" aria-label="下へ"'+(k===list.length-1?' disabled':'')+'>'+svg('down',20)+'</button></div>';
    }else{
-    h+='<button class="row" data-a="openItem" data-id="'+i.id+'"><span class="grow"><div>'+esc(i.service||'（名称未設定）')+'</div><div class="sub">'+esc(i.account)+'</div></span><span class="cnt">›</span></button>';
+    h+='<button class="row" data-a="openItem" data-id="'+i.id+'"><span class="grow"><div>'+esc(i.service||'（名称未設定）')+'</div><div class="sub">'+esc(subOf(i))+'</div></span><span class="cnt">›</span></button>';
    }
   });
   h+='</div>';
  }
  return h;
 }
+function vNewType(){
+ var h='<div class="top"><button class="nav" data-a="backToItems">'+svg('back',20)+'戻る</button></div><h1>どちらを作りますか？</h1>';
+ h+='<button class="btn" style="margin-bottom:12px;height:72px;font-size:19px" data-a="createItem" data-t="login">ID・パスワード</button>';
+ h+='<button class="btn alt" style="height:72px;font-size:19px" data-a="createItem" data-t="memo">メモのみ（タイトルとメモ）</button>';
+ return h;
+}
+function subOf(i){
+ if(i.type==='memo')return (i.memo||'').split('\n')[0].slice(0,40);
+ return i.account;
+}
 function vDetail(){
  var it=itemOf(view.iid);if(!it){view={n:'folders'};return vFolders()}
  if(view.edit)return vEdit(it);
  var h='<div class="top"><button class="nav" data-a="backItem">'+svg('back',20)+'戻る</button><button class="nav" data-a="edit">編集</button></div>';
  h+='<h1 class="t2">'+esc(it.service||'（名称未設定）')+'</h1>';
- h+='<div class="fld"><div class="grow"><div class="fl">アカウント名 / ID</div><div class="fv">'+(it.account?esc(it.account):'—')+'</div></div><div class="btns"><button class="ib cp" data-a="copy" data-k="account" aria-label="IDをコピー">'+svg('copy')+'</button></div></div>';
- h+='<div class="fld"><div class="grow"><div class="fl">パスワード</div><div class="fv" id="pwv">'+(it.pw?'••••••••':'—')+'</div></div><div class="btns"><button class="ib eye" id="eyebtn" data-a="eye" aria-label="パスワードを確認">'+svg('eye')+'</button><button class="ib cp" data-a="copy" data-k="pw" aria-label="パスワードをコピー">'+svg('copy')+'</button></div></div>';
- h+='<div class="fld" style="align-items:flex-start"><div class="grow"><div class="fl">メモ</div><div class="fv">'+(it.memo?esc(it.memo):'—')+'</div></div></div>';
+ if(it.type==='memo'){
+  h+='<div class="fld" style="align-items:flex-start"><div class="grow"><div class="fl">メモ</div><div class="fv">'+(it.memo?esc(it.memo):'—')+'</div></div><div class="btns"><button class="ib cp" data-a="copy" data-k="memo" aria-label="メモをコピー">'+svg('copy')+'</button></div></div>';
+ }else{
+  h+='<div class="fld"><div class="grow"><div class="fl">アカウント名 / ID</div><div class="fv">'+(it.account?esc(it.account):'—')+'</div></div><div class="btns"><button class="ib cp" data-a="copy" data-k="account" aria-label="IDをコピー">'+svg('copy')+'</button></div></div>';
+  h+='<div class="fld"><div class="grow"><div class="fl">パスワード</div><div class="fv" id="pwv">'+(it.pw?'••••••••':'—')+'</div></div><div class="btns"><button class="ib eye" id="eyebtn" data-a="eye" aria-label="パスワードを確認">'+svg('eye')+'</button><button class="ib cp" data-a="copy" data-k="pw" aria-label="パスワードをコピー">'+svg('copy')+'</button></div></div>';
+  h+='<div class="fld" style="align-items:flex-start"><div class="grow"><div class="fl">メモ</div><div class="fv">'+(it.memo?esc(it.memo):'—')+'</div></div></div>';
+ }
  h+='<div class="foot"><button class="act" style="color:#A32D2D" data-a="delItem">'+svg('trash',20)+'この項目を削除</button></div>';
  return h;
 }
 function vEdit(it){
  var h='<div class="top"><span class="fl">編集中（自動で保存されます）</span><button class="nav" data-a="done">完了</button></div>';
- h+='<label class="lbl" for="e_service">サービス名</label><input id="e_service" data-f="service" value="'+esc(it.service)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus>';
- h+='<label class="lbl" for="e_account">アカウント名 / ID</label><input id="e_account" data-f="account" value="'+esc(it.account)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
- h+='<label class="lbl" for="e_pw">パスワード</label><input id="e_pw" class="mask" data-f="pw" value="'+esc(it.pw)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
- h+='<label class="lbl" for="e_memo">メモ</label><textarea id="e_memo" data-f="memo" autocomplete="off" spellcheck="false">'+esc(it.memo)+'</textarea>';
+ var memoOnly=it.type==='memo';
+ h+='<label class="lbl" for="e_type">種類</label><select id="e_type" data-f="type"><option value="login"'+(memoOnly?'':' selected')+'>ID・パスワード</option><option value="memo"'+(memoOnly?' selected':'')+'>メモのみ</option></select>';
+ h+='<label class="lbl" for="e_service">'+(memoOnly?'タイトル':'サービス名')+'</label><input id="e_service" data-f="service" value="'+esc(it.service)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus>';
+ if(!memoOnly){
+  h+='<label class="lbl" for="e_account">アカウント名 / ID</label><input id="e_account" data-f="account" value="'+esc(it.account)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
+  h+='<label class="lbl" for="e_pw">パスワード</label><input id="e_pw" class="mask" data-f="pw" value="'+esc(it.pw)+'" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
+ }
+ h+='<label class="lbl" for="e_memo">メモ</label><textarea id="e_memo" data-f="memo" autocomplete="off" spellcheck="false"'+(memoOnly?' style="min-height:240px"':'')+'>'+esc(it.memo)+'</textarea>';
  h+='<label class="lbl" for="e_folder">フォルダ</label><select id="e_folder" data-f="folderId">';
  sess.state.folders.forEach(function(f){h+='<option value="'+f.id+'"'+(f.id===it.folderId?' selected':'')+'>'+esc(f.name||'（名称未設定）')+'</option>'});
  h+='</select>';
@@ -310,6 +328,7 @@ function render(){
   case 'folders':h=vFolders();break;
   case 'items':h=vItems();break;
   case 'detail':h=vDetail();break;
+  case 'newtype':h=vNewType();break;
   case 'settings':h=vSettings();break;
   default:h=vBoot();
  }
@@ -501,8 +520,10 @@ app.addEventListener('click',function(ev){
   case 'toFolders':persistNow();pendingEnv=null;view={n:'folders'};render();break;
   case 'settings':persistNow().then(function(){view={n:'settings'};render()});break;
   case 'openItem':view={n:'detail',iid:id,edit:false,fid:view.fid};render();break;
-  case 'newItem':
-   var ni={id:uid(),folderId:view.fid,service:'',account:'',pw:'',memo:''};
+  case 'newItem':view={n:'newtype',fid:view.fid};render();break;
+  case 'backToItems':view={n:'items',fid:view.fid};render();break;
+  case 'createItem':
+   var ni={id:uid(),folderId:view.fid,type:t.dataset.t==='memo'?'memo':'login',service:'',account:'',pw:'',memo:''};
    sess.state.items.push(ni);view={n:'detail',iid:ni.id,edit:true,fid:view.fid};render();break;
   case 'backItem':
    var it0=itemOf(view.iid);view={n:'items',fid:it0?it0.folderId:view.fid};render();break;
@@ -520,7 +541,7 @@ app.addEventListener('click',function(ev){
    }
    break;
   case 'copy':
-   var it3=itemOf(view.iid);if(it3)doCopy(it3[t.dataset.k],t.dataset.k==='pw'?'パスワード':'ID');break;
+   var it3=itemOf(view.iid);if(it3)doCopy(it3[t.dataset.k],t.dataset.k==='pw'?'パスワード':(t.dataset.k==='memo'?'メモ':'ID'));break;
   case 'eye':toggleEye();break;
   case 'export':actExport();break;
   case 'import':actImport();break;
@@ -549,6 +570,7 @@ app.addEventListener('change',function(ev){
   rd.readAsText(t.files[0]);
  }
  if(t.dataset&&t.dataset.f==='folderId'&&sess){var it=itemOf(view.iid);if(it){it.folderId=t.value;schedulePersist()}}
+ if(t.dataset&&t.dataset.f==='type'&&sess){var it2=itemOf(view.iid);if(it2){it2.type=t.value==='memo'?'memo':'login';schedulePersist();render()}}
 });
 app.addEventListener('keydown',function(ev){
  if(ev.key!=='Enter')return;
