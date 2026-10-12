@@ -68,14 +68,13 @@ textarea{min-height:110px;resize:vertical}
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
 'use strict';
-var LS_KEY='pwmemo.data', LS_PREV='pwmemo.prev', LS_PRE='pwmemo.preimport', LS_META='pwmemo.meta';
+var LS_KEY='pwmemo.data', LS_PREV='pwmemo.prev', LS_PRE='pwmemo.preimport', LS_META='pwmemo.meta', LS_LEGACY='pwmemo.legacy';
 var ITER=600000;
 var enc=new TextEncoder(), dec=new TextDecoder();
 var app=document.getElementById('app');
-var sess=null, view={n:'boot'}, pendingEnv=null, editFolders=false, editItems=false;
-var saveTimer=null, saveChain=Promise.resolve(), clipTimer=null, eyeTimer=null, toastTimer=null;
-var meta={lastBackup:null,dirty:false,fails:0,until:0};
-var unlocking=false;
+var sess=null, view={n:'boot'}, pendingEnv=null, exportFile=null, editFolders=false, editItems=false;
+var saveTimer=null, clipTimer=null, eyeTimer=null, toastTimer=null;
+var meta={lastBackup:null,dirty:false};
 
 var IC={
  copy:'<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
@@ -92,27 +91,33 @@ var IC={
 };
 function svg(n,s){s=s||22;return '<svg viewBox="0 0 24 24" width="'+s+'" height="'+s+'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+IC[n]+'</svg>'}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
-function uid(){var a=new Uint8Array(8);crypto.getRandomValues(a);return Array.prototype.map.call(a,function(x){return ('0'+x.toString(16)).slice(-2)}).join('')}
+function uid(){
+ var a=new Uint8Array(8);
+ try{crypto.getRandomValues(a)}catch(e){for(var i=0;i<8;i++)a[i]=Math.floor(Math.random()*256)}
+ return Array.prototype.map.call(a,function(x){return ('0'+x.toString(16)).slice(-2)}).join('');
+}
 function b64(buf){var a=new Uint8Array(buf),s='';for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s)}
 function unb64(s){var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
 function el(id){return document.getElementById(id)}
 function val(id){var e=el(id);return e?e.value:''}
+function hasCrypto(){return !!(window.crypto&&crypto.subtle)}
 
 function lsGet(k){try{return localStorage.getItem(k)}catch(e){return null}}
 function lsSet(k,v){localStorage.setItem(k,v)}
-function loadMeta(){try{var m=JSON.parse(lsGet(LS_META)||'{}');meta.lastBackup=m.lastBackup||null;meta.dirty=!!m.dirty;meta.fails=m.fails|0;meta.until=m.until|0}catch(e){}}
+function loadMeta(){try{var m=JSON.parse(lsGet(LS_META)||'{}');meta.lastBackup=m.lastBackup||null;meta.dirty=!!m.dirty}catch(e){}}
 function saveMeta(){try{lsSet(LS_META,JSON.stringify(meta))}catch(e){}}
-
 function toast(m){var t=el('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('on')},1800)}
 
 async function deriveKey(pw,salt,iter){
  var m=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']);
  return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 }
-async function encryptState(s){
+async function makeBackup(pw,state){
+ var salt=crypto.getRandomValues(new Uint8Array(16));
+ var key=await deriveKey(pw,salt,ITER);
  var iv=crypto.getRandomValues(new Uint8Array(12));
- var ct=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},s.key,enc.encode(JSON.stringify(s.state)));
- return JSON.stringify({app:'pwmemo',v:1,kdf:'PBKDF2-SHA256',iter:s.iter,salt:s.salt,iv:b64(iv),data:b64(ct)});
+ var ct=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,enc.encode(JSON.stringify(state)));
+ return JSON.stringify({app:'pwmemo',v:1,kdf:'PBKDF2-SHA256',iter:ITER,salt:b64(salt),iv:b64(iv),data:b64(ct)});
 }
 async function decryptEnvelope(env,pw){
  if(!env||env.app!=='pwmemo'||!env.salt||!env.iv||!env.data)throw new Error('format');
@@ -120,7 +125,7 @@ async function decryptEnvelope(env,pw){
  if(iter<100000||iter>3000000)throw new Error('format');
  var key=await deriveKey(pw,unb64(env.salt),iter);
  var pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(env.iv)},key,unb64(env.data));
- return {state:normalize(JSON.parse(dec.decode(pt))),key:key,salt:env.salt,iter:iter};
+ return normalize(JSON.parse(dec.decode(pt)));
 }
 function normalize(st){
  st=st&&typeof st==='object'?st:{};
@@ -132,40 +137,30 @@ function normalize(st){
  }):[];
  return {v:1,folders:folders,items:items};
 }
+function defaultState(){return {v:1,folders:[{id:uid(),name:'会社用'},{id:uid(),name:'ゲーム用'}],items:[]}}
 
-async function doSave(){
- var s=sess;if(!s)return;
+function writeNow(){
+ if(!sess)return false;
  try{
-  var blob=await encryptState(s);
+  var blob=JSON.stringify({app:'pwmemo',v:2,state:sess.state});
   var cur=lsGet(LS_KEY);
-  if(cur)lsSet(LS_PREV,cur);
+  if(cur&&cur!==blob)lsSet(LS_PREV,cur);
   lsSet(LS_KEY,blob);
   if(lsGet(LS_KEY)!==blob)throw new Error('verify');
-  s.unsaved=false;
-  var ban=el('saveerr');if(ban)ban.remove();
+  sess.unsaved=false;
+  return true;
  }catch(e){
-  s.unsaved=true;
+  if(sess)sess.unsaved=true;
   toast('保存に失敗しました。バックアップを書き出してください');
-  throw e;
+  return false;
  }
 }
-function persist(){saveChain=saveChain.then(doSave,doSave);return saveChain.catch(function(){})}
 function schedulePersist(){
  meta.dirty=true;saveMeta();
- clearTimeout(saveTimer);saveTimer=setTimeout(function(){saveTimer=null;persist()},350);
+ clearTimeout(saveTimer);saveTimer=setTimeout(function(){saveTimer=null;writeNow()},300);
 }
-function persistNow(){clearTimeout(saveTimer);saveTimer=null;meta.dirty=true;saveMeta();return persist()}
-
-function lockNow(){
- if(!sess)return;
- clearTimeout(saveTimer);saveTimer=null;
- clearTimeout(clipTimer);clipTimer=null;
- clearTimeout(eyeTimer);eyeTimer=null;
- var s=sess;
- persist().then(function(){if(sess===s&&!s.unsaved)sess=null});
- pendingEnv=null;editFolders=false;
- view={n:'lock'};render();
-}
+function persistNow(){clearTimeout(saveTimer);saveTimer=null;meta.dirty=true;saveMeta();return writeNow()}
+function flushNow(){if(saveTimer){clearTimeout(saveTimer);saveTimer=null;writeNow()}}
 
 function folderOf(id){return sess.state.folders.filter(function(f){return f.id===id})[0]}
 function itemOf(id){return sess.state.items.filter(function(i){return i.id===id})[0]}
@@ -182,37 +177,40 @@ function fmtDate(iso){try{var d=new Date(iso);return d.getFullYear()+'年'+(d.ge
 function ymd(){var d=new Date();function p(n){return ('0'+n).slice(-2)}return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())}
 function isStandalone(){return window.navigator.standalone===true||(window.matchMedia&&matchMedia('(display-mode: standalone)').matches)}
 
-function bannerBackup(){
- if(!sess||!sess.state.items.length)return '';
- if(!meta.lastBackup)return '<div class="banner">まだバックアップがありません。「バックアップ」から書き出してください。</div>';
- var days=Math.floor((Date.now()-new Date(meta.lastBackup).getTime())/86400000);
- if(meta.dirty&&days>=7)return '<div class="banner">最後のバックアップから'+days+'日たっています。書き出しをおすすめします。</div>';
- return '';
-}
-
-function vBoot(){return ''}
-function vNoCrypto(){return '<div class="center"><h1>使えません</h1><div class="banner red">この環境では暗号化機能が使えないため、データを保存しません。https:// のアドレスで、Safariから開き直してください。</div></div>'}
-function vSetup(){
- var h='<div class="center"><div class="ic">'+svg('lock',48)+'</div><h1 style="margin:0">はじめの設定</h1><div class="note" style="text-align:left">アプリを開くときのマスターパスワードを決めてください。忘れると誰にも復元できません。</div>';
- if(!isStandalone())h+='<div class="banner red" style="text-align:left">先に「共有ボタン → ホーム画面に追加」を行い、ホーム画面のアイコンから開いてください。ブラウザで入力したデータは、ホーム画面のアプリには引き継がれません。</div>';
- h+='<label class="lbl" style="text-align:left" for="p1">マスターパスワード（数字4桁）</label><input id="p1" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus>';
- h+='<label class="lbl" style="text-align:left" for="p2">もう一度入力</label><input id="p2" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-enter="setup">';
- h+='<div class="err" id="err"></div><button class="btn" data-a="setup">設定してはじめる</button></div>';
+function bannerTop(){
+ var h='';
+ if(!isStandalone())h+='<div class="banner red">ブラウザで開いています。「共有ボタン → ホーム画面に追加」を行い、ホーム画面のアイコンから開いてください。ブラウザで入力したデータは、ホーム画面のアプリには引き継がれません。</div>';
+ if(sess&&sess.unsaved)h+='<div class="banner red">直前の変更を保存できていません。バックアップを書き出してください。</div>';
+ if(sess&&sess.state.items.length){
+  if(!meta.lastBackup)h+='<div class="banner">まだバックアップがありません。「バックアップ・設定」から書き出してください。</div>';
+  else{
+   var days=Math.floor((Date.now()-new Date(meta.lastBackup).getTime())/86400000);
+   if(meta.dirty&&days>=7)h+='<div class="banner">最後のバックアップから'+days+'日たっています。書き出しをおすすめします。</div>';
+  }
+ }
  return h;
 }
-function vLock(){
- var h='<div class="center"><div class="ic">'+svg('lock',52)+'</div><h1 style="margin:0">パスワードメモ</h1>';
- if(!isStandalone())h+='<div class="banner red" style="text-align:left">ブラウザで開いています。ホーム画面のアイコンから開かないと、保存したデータが見えません。</div>';
- h+='<input id="pw" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="text-align:center;font-size:24px;letter-spacing:.3em" data-focus data-enter="unlock" aria-label="マスターパスワード">';
+
+function vBroken(){
+ var h='<div class="center"><h1>データを開けません</h1><div class="banner red" style="text-align:left">保存されているデータを読み込めませんでした。何も上書きしていません。</div>';
+ if(lsGet(LS_PREV))h+='<button class="btn" data-a="tryPrev">ひとつ前の保存データで開く</button>';
+ h+='</div>';
+ return h;
+}
+function vMigrate(){
+ var h='<div class="center"><div class="ic">'+svg('lock',48)+'</div><h1 style="margin:0">以前のデータがあります</h1>';
+ h+='<div class="note" style="text-align:left">以前設定した数字4桁のパスワードを、一度だけ入力してください。入力するとパスワードなしの形式に変換されます。</div>';
+ h+='<input id="mpw" class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" style="text-align:center;font-size:24px;letter-spacing:.3em" data-focus data-enter="migrate" aria-label="以前のパスワード">';
  h+='<div class="err" id="err" role="alert"></div>';
- h+='<button class="act" style="justify-content:center;font-weight:500;font-size:14px" data-a="tryPrev">開けない場合：ひとつ前の保存データで試す</button></div>';
+ h+='<button class="btn" data-a="migrate">変換する</button>';
+ h+='</div>';
  return h;
 }
 function vFolders(){
  var f=sess.state.folders;
  var h='<div class="top"><h1 style="margin:0">フォルダ</h1><button class="nav" data-a="toggleEdit">'+(editFolders?'完了':'編集')+'</button></div>';
  h+='<div class="tools"><button class="btn alt" data-a="newFolder">'+svg('plus',20)+'新規フォルダ</button><button class="btn alt" data-a="settings">'+svg('shield',20)+'バックアップ・設定</button></div>';
- h+=bannerBackup();
+ h+=bannerTop();
  if(editFolders)h+='<div class="note" style="margin-top:0">名前を直接書き換えられます。▲▼で順番を入れ替えます。</div>';
  h+='<div class="card">';
  f.forEach(function(x,k){
@@ -228,6 +226,10 @@ function vFolders(){
  });
  h+='</div>';
  return h;
+}
+function subOf(i){
+ if(i.type==='memo')return (i.memo||'').split('\n')[0].slice(0,40);
+ return i.account;
 }
 function vItems(){
  var fo=folderOf(view.fid);if(!fo){view={n:'folders'};return vFolders()}
@@ -255,10 +257,6 @@ function vNewType(){
  h+='<button class="btn" style="margin-bottom:12px;height:72px;font-size:19px" data-a="createItem" data-t="login">ID・パスワード</button>';
  h+='<button class="btn alt" style="height:72px;font-size:19px" data-a="createItem" data-t="memo">メモのみ（タイトルとメモ）</button>';
  return h;
-}
-function subOf(i){
- if(i.type==='memo')return (i.memo||'').split('\n')[0].slice(0,40);
- return i.account;
 }
 function vDetail(){
  var it=itemOf(view.iid);if(!it){view={n:'folders'};return vFolders()}
@@ -292,28 +290,33 @@ function vEdit(it){
 }
 function vSettings(){
  var st=sess.state;
+ var num='class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"';
  var h='<div class="top"><button class="nav" data-a="toFolders">'+svg('back',20)+'フォルダ</button></div><h1>バックアップ・設定</h1>';
  h+='<div class="fld" style="display:block"><div class="fl">保存されている件数</div><div class="fv">フォルダ '+st.folders.length+' ／ 項目 '+st.items.length+'</div></div>';
  h+='<div class="fld" style="display:block"><div class="fl">最後にバックアップした日</div><div class="fv">'+(meta.lastBackup?esc(fmtDate(meta.lastBackup)):'まだありません')+'</div></div>';
- h+='<button class="btn" data-a="export">バックアップを書き出す</button>';
- h+='<div class="note">書き出したファイルは暗号化されています。共有画面で「ファイルに保存」を選び、iCloud Driveに保存してください。PCにも1つ置いておくと安心です。</div>';
+ h+='<h2>バックアップを書き出す</h2>';
+ if(!hasCrypto()){
+  h+='<div class="banner red">この環境では書き出しに必要な暗号化機能が使えません。</div>';
+ }else if(!exportFile){
+  h+='<label class="lbl" for="bkpw">バックアップ用パスワード（数字4桁以上）</label><input id="bkpw" '+num+' data-enter="prepare">';
+  h+='<div class="err" id="err3"></div><button class="btn" data-a="prepare">バックアップを作る</button>';
+  h+='<div class="note">ファイルはこのパスワードで暗号化されます。復元するときに必要です。長いほど安全です。</div>';
+ }else{
+  h+='<div class="banner" style="background:#EAF3DE;border-color:#97C459;color:#173404">バックアップの準備ができました。下のボタンから「ファイルに保存」を選び、iCloud Driveに保存してください。</div>';
+  h+='<button class="btn" data-a="share">共有・保存する</button>';
+  h+='<button class="btn alt" style="margin-top:8px" data-a="cancelExport">やめる</button>';
+ }
  h+='<h2>バックアップから復元</h2>';
  if(!pendingEnv){
   h+='<label class="btn alt" for="ifile" style="cursor:pointer">ファイルを選ぶ</label><input id="ifile" type="file" style="display:none" data-a="pickfile">';
  }else{
-  h+='<label class="lbl" for="ipw">このバックアップを書き出したときのパスワード</label><input id="ipw" class="mask" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-focus data-enter="import">';
+  h+='<label class="lbl" for="ipw">このバックアップのパスワード</label><input id="ipw" '+num+' data-focus data-enter="import">';
   h+='<div class="err" id="err"></div><button class="btn" data-a="import">復元する</button><button class="btn alt" style="margin-top:8px" data-a="cancelImport">やめる</button>';
  }
  h+='<div class="note">復元すると今のデータは置き換わります。直前の状態は1つだけ保管され、戻すこともできます。</div>';
  if(lsGet(LS_PRE))h+='<button class="btn alt" data-a="undoImport">復元する前の状態に戻す</button>';
- h+='<h2>マスターパスワードの変更</h2>';
- h+='<div class="banner">パスワードは数字4桁です。書き出したバックアップファイルは、他人に渡さないでください（4桁は総当たりで解読されます）。</div>';
- var num='class="mask" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"';
- h+='<label class="lbl" for="cp0">今のパスワード</label><input id="cp0" '+num+'>';
- h+='<label class="lbl" for="cp1">新しいパスワード（数字4桁）</label><input id="cp1" '+num+'>';
- h+='<label class="lbl" for="cp2">新しいパスワード（もう一度）</label><input id="cp2" '+num+'>';
- h+='<div class="err" id="err2"></div><button class="btn alt" data-a="changePw">パスワードを変更</button>';
- h+='<div class="note">変更しても、変更前に書き出したバックアップは古いパスワードのままです。</div>';
+ h+='<h2>このアプリについて</h2>';
+ h+='<div class="note">このアプリにはパスワード入力がありません。データはこのiPhoneの中だけに保存され、外部へは送られません。守っているのはiPhone本体のロック（パスコード・Face ID）です。</div>';
  return h;
 }
 
@@ -321,80 +324,22 @@ function render(){
  var h='';
  if(view.n!=='items')editItems=false;
  if(view.n!=='folders')editFolders=false;
+ if(view.n!=='settings'){exportFile=null;pendingEnv=null}
  switch(view.n){
-  case 'nocrypto':h=vNoCrypto();break;
-  case 'setup':h=vSetup();break;
-  case 'lock':h=vLock();break;
+  case 'broken':h=vBroken();break;
+  case 'migrate':h=vMigrate();break;
   case 'folders':h=vFolders();break;
   case 'items':h=vItems();break;
   case 'detail':h=vDetail();break;
   case 'newtype':h=vNewType();break;
   case 'settings':h=vSettings();break;
-  default:h=vBoot();
+  default:h='';
  }
  app.innerHTML=h;
  var f=app.querySelector('[data-focus]');if(f){try{f.focus()}catch(e){}}
  window.scrollTo(0,0);
 }
-
 function setErr(id,m){var e=el(id);if(e)e.textContent=m||''}
-
-async function actSetup(){
- var p1=val('p1'),p2=val('p2');
- if(!/^\d{4}$/.test(p1)){setErr('err','数字4桁で入力してください');return}
- if(p1!==p2){setErr('err','2回の入力が一致しません');return}
- setErr('err','暗号化の準備中…');
- try{
-  var salt=crypto.getRandomValues(new Uint8Array(16));
-  var key=await deriveKey(p1,salt,ITER);
-  sess={key:key,salt:b64(salt),iter:ITER,weak:p1.length<8,unsaved:false,
-   state:{v:1,folders:[{id:uid(),name:'会社用'},{id:uid(),name:'ゲーム用'}],items:[]}};
-  await doSave();
-  meta.lastBackup=null;meta.dirty=false;saveMeta();
-  view={n:'folders'};render();
- }catch(e){sess=null;setErr('err','保存できませんでした。保存領域が使えない可能性があります。')}
-}
-async function actUnlock(usePrev){
- var pw=val('pw');
- if(!pw){setErr('err','パスワードを入力してください');return}
- if(meta.until&&Date.now()<meta.until){
-  setErr('err','間違いが続いたため、'+Math.ceil((meta.until-Date.now())/60000)+'分後にもう一度お試しください');
-  var w=el('pw');if(w)w.value='';return;
- }
- if(unlocking)return;
- unlocking=true;
- var raw=usePrev?lsGet(LS_PREV):(lsGet(LS_KEY)||lsGet(LS_PREV));
- if(!raw){unlocking=false;setErr('err','保存データが見つかりません');return}
- var b=el('ubtn');if(b)b.disabled=true;
- setErr('err','確認中…');
- try{
-  var env;try{env=JSON.parse(raw)}catch(e){throw new Error('format')}
-  var r=await decryptEnvelope(env,pw);
-  if(sess&&sess.unsaved){
-   sess.key=r.key;sess.salt=r.salt;sess.iter=r.iter;
-  }else{
-   sess={key:r.key,salt:r.salt,iter:r.iter,state:r.state,unsaved:false};
-  }
-  sess.weak=pw.length<8;
-  meta.fails=0;meta.until=0;saveMeta();
-  if(usePrev)await persistNow();
-  dropEmpty();
-  view={n:'folders'};editFolders=false;render();
-  if(sess.unsaved)persist();
- }catch(e){
-  var bad=!(e&&e.message==='format');
-  if(bad){
-   meta.fails=(meta.fails||0)+1;
-   if(meta.fails%5===0){meta.until=Date.now()+5*60000}
-   saveMeta();
-  }
-  var rest=5-((meta.fails||0)%5);
-  setErr('err',bad?('パスワードが違います'+((meta.until&&Date.now()<meta.until)?'（5分間ロックします）':'（あと'+rest+'回で5分間ロック）')):'保存データを読み込めませんでした');
-  var i=el('pw');if(i){i.value='';i.focus()}
-  if(b)b.disabled=false;
- }
- unlocking=false;
-}
 
 function copyFallback(t){
  var ta=document.createElement('textarea');ta.value=t;ta.setAttribute('readonly','');ta.style.cssText='position:fixed;top:0;left:0;opacity:0';
@@ -411,7 +356,6 @@ async function doCopy(text,label){
  clearTimeout(clipTimer);
  clipTimer=setTimeout(function(){clipTimer=null;if(document.visibilityState==='visible'){try{navigator.clipboard.writeText(' ')}catch(e){}}},30000);
 }
-
 function hidePw(){
  clearTimeout(eyeTimer);eyeTimer=null;
  var v=el('pwv'),b=el('eyebtn');
@@ -427,67 +371,74 @@ function toggleEye(){
  clearTimeout(eyeTimer);eyeTimer=setTimeout(hidePw,15000);
 }
 
-async function actExport(){
- var blob=lsGet(LS_KEY);
- if(!blob){toast('保存データがありません');return}
- var name='pwmemo-backup-'+ymd()+'.json';
+function markBackup(){meta.lastBackup=new Date().toISOString();meta.dirty=false;saveMeta()}
+async function actPrepare(){
+ var pw=val('bkpw');
+ if(!/^\d{4,12}$/.test(pw)){setErr('err3','数字4桁以上（12桁まで）で入力してください');return}
+ setErr('err3','暗号化しています…');
  try{
-  var file=new File([blob],name,{type:'application/json'});
+  flushNow();
+  var text=await makeBackup(pw,sess.state);
+  exportFile=new File([text],'pwmemo-backup-'+ymd()+'.json',{type:'application/json'});
+  render();
+ }catch(e){setErr('err3','バックアップを作れませんでした')}
+}
+async function actShare(){
+ if(!exportFile)return;
+ var file=exportFile;
+ try{
   if(navigator.canShare&&navigator.canShare({files:[file]})){
-   await navigator.share({files:[file],title:name});
-   meta.lastBackup=new Date().toISOString();meta.dirty=false;saveMeta();render();toast('バックアップを書き出しました');return;
+   await navigator.share({files:[file],title:file.name});
+   markBackup();exportFile=null;render();toast('バックアップを書き出しました');return;
   }
  }catch(e){
   if(e&&e.name==='AbortError'){toast('キャンセルしました');return}
  }
- var url=URL.createObjectURL(new Blob([blob],{type:'application/json'}));
- var a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+ var url=URL.createObjectURL(file);
+ var a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();
  setTimeout(function(){URL.revokeObjectURL(url)},15000);
- meta.lastBackup=new Date().toISOString();meta.dirty=false;saveMeta();render();toast('ファイルを書き出しました');
+ markBackup();exportFile=null;render();toast('ファイルを書き出しました');
 }
 async function actImport(){
  var pw=val('ipw');
  if(!pw){setErr('err','パスワードを入力してください');return}
  setErr('err','確認中…');
- var r;
- try{r=await decryptEnvelope(pendingEnv,pw)}catch(e){setErr('err',e&&e.message==='format'?'バックアップファイルとして読み込めません':'パスワードが違います');return}
- var cf=r.state.folders.length,ci=r.state.items.length;
- var curI=sess.state.items.length;
- if(!confirm('バックアップ（フォルダ'+cf+'・項目'+ci+'）で、今のデータ（項目'+curI+'）を置き換えます。よろしいですか？'))return;
+ var st;
+ try{st=await decryptEnvelope(pendingEnv,pw)}catch(e){setErr('err',e&&e.message==='format'?'バックアップファイルとして読み込めません':'パスワードが違います');return}
+ if(!confirm('バックアップ（フォルダ'+st.folders.length+'・項目'+st.items.length+'）で、今のデータ（項目'+sess.state.items.length+'）を置き換えます。よろしいですか？'))return;
+ flushNow();
  var cur=lsGet(LS_KEY);if(cur){try{lsSet(LS_PRE,cur)}catch(e){}}
- sess.state=r.state;
- pendingEnv=null;
- await persistNow();
+ sess.state=st;pendingEnv=null;
+ persistNow();
  view={n:'folders'};render();toast('復元しました');
 }
-async function actUndoImport(){
+function actUndoImport(){
  var raw=lsGet(LS_PRE);if(!raw)return;
- var pw=prompt('今のマスターパスワードを入力してください');
- if(pw==null)return;
  try{
-  var r=await decryptEnvelope(JSON.parse(raw),pw);
-  if(!confirm('復元する前の状態（項目'+r.state.items.length+'）に戻します。よろしいですか？'))return;
-  sess.state=r.state;await persistNow();
+  var env=JSON.parse(raw);
+  if(!env||env.v!==2||!env.state)throw 0;
+  var st=normalize(env.state);
+  if(!confirm('復元する前の状態（項目'+st.items.length+'）に戻します。よろしいですか？'))return;
+  sess.state=st;persistNow();
   view={n:'folders'};render();toast('元に戻しました');
- }catch(e){toast('戻せませんでした（パスワードが違う可能性があります）')}
+ }catch(e){toast('戻せませんでした')}
 }
-async function actChangePw(){
- var p0=val('cp0'),p1=val('cp1'),p2=val('cp2');
- if(!/^\d{4}$/.test(p1)){setErr('err2','新しいパスワードは数字4桁にしてください');return}
- if(p1!==p2){setErr('err2','新しいパスワードが一致しません');return}
- setErr('err2','確認中…');
+async function actMigrate(){
+ var pw=val('mpw');
+ if(!pw){setErr('err','パスワードを入力してください');return}
+ setErr('err','確認中…');
  try{
-  var raw=lsGet(LS_KEY);
-  await decryptEnvelope(JSON.parse(raw),p0);
- }catch(e){setErr('err2','今のパスワードが違います');return}
- try{
-  var salt=crypto.getRandomValues(new Uint8Array(16));
-  var key=await deriveKey(p1,salt,ITER);
-  sess.key=key;sess.salt=b64(salt);sess.iter=ITER;sess.weak=p1.length<8;
-  await persistNow();
-  try{localStorage.removeItem(LS_PREV);localStorage.removeItem(LS_PRE)}catch(e){}
-  render();toast('パスワードを変更しました');
- }catch(e){setErr('err2','変更に失敗しました。もう一度お試しください')}
+  var env=JSON.parse(lsGet(LS_KEY)||lsGet(LS_PREV));
+  var st=await decryptEnvelope(env,pw);
+  try{lsSet(LS_LEGACY,lsGet(LS_KEY)||lsGet(LS_PREV))}catch(e){}
+  sess={state:st,unsaved:false};
+  dropEmpty();
+  if(!writeNow()){setErr('err','保存できませんでした');return}
+  view={n:'folders'};render();toast('変換しました');
+ }catch(e){
+  setErr('err',e&&e.message==='format'?'以前のデータを読み込めませんでした':'パスワードが違います');
+  var i=el('mpw');if(i){i.value='';i.focus()}
+ }
 }
 
 app.addEventListener('click',function(ev){
@@ -495,9 +446,14 @@ app.addEventListener('click',function(ev){
  var a=t.dataset.a,id=t.dataset.id;
  if(t.tagName==='INPUT')return;
  switch(a){
-  case 'setup':actSetup();break;
-  case 'unlock':actUnlock(false);break;
-  case 'tryPrev':actUnlock(true);break;
+  case 'tryPrev':
+   try{
+    var pe=JSON.parse(lsGet(LS_PREV));
+    if(pe&&pe.v===2&&pe.state){sess={state:normalize(pe.state),unsaved:false};dropEmpty();persistNow();view={n:'folders'};render();break}
+    throw 0;
+   }catch(e){toast('ひとつ前のデータも開けませんでした')}
+   break;
+  case 'migrate':actMigrate();break;
   case 'toggleEdit':editFolders=!editFolders;if(!editFolders)persistNow();render();break;
   case 'openFolder':view={n:'items',fid:id};render();break;
   case 'toggleItemsEdit':editItems=!editItems;if(!editItems)persistNow();render();break;
@@ -517,8 +473,8 @@ app.addEventListener('click',function(ev){
     persistNow();render();
    }
    break;
-  case 'toFolders':persistNow();pendingEnv=null;view={n:'folders'};render();break;
-  case 'settings':persistNow().then(function(){view={n:'settings'};render()});break;
+  case 'toFolders':persistNow();view={n:'folders'};render();break;
+  case 'settings':persistNow();view={n:'settings'};render();break;
   case 'openItem':view={n:'detail',iid:id,edit:false,fid:view.fid};render();break;
   case 'newItem':view={n:'newtype',fid:view.fid};render();break;
   case 'backToItems':view={n:'items',fid:view.fid};render();break;
@@ -543,16 +499,16 @@ app.addEventListener('click',function(ev){
   case 'copy':
    var it3=itemOf(view.iid);if(it3)doCopy(it3[t.dataset.k],t.dataset.k==='pw'?'パスワード':(t.dataset.k==='memo'?'メモ':'ID'));break;
   case 'eye':toggleEye();break;
-  case 'export':actExport();break;
+  case 'prepare':actPrepare();break;
+  case 'share':actShare();break;
+  case 'cancelExport':exportFile=null;render();break;
   case 'import':actImport();break;
   case 'cancelImport':pendingEnv=null;render();break;
   case 'undoImport':actUndoImport();break;
-  case 'changePw':actChangePw();break;
  }
 });
 app.addEventListener('input',function(ev){
  var t=ev.target;
- if(t.id==='pw'){if(t.value.length>=4)actUnlock(false);return}
  var f=t.dataset&&t.dataset.f;if(!f||!sess)return;
  if(f==='fname'){var fo=folderOf(t.dataset.id);if(fo){fo.name=t.value;schedulePersist()}return}
  var it=itemOf(view.iid);if(!it)return;
@@ -563,7 +519,7 @@ app.addEventListener('change',function(ev){
  if(t.dataset&&t.dataset.a==='pickfile'&&t.files&&t.files[0]){
   var rd=new FileReader();
   rd.onload=function(){
-   try{var env=JSON.parse(String(rd.result));if(!env||env.app!=='pwmemo')throw 0;pendingEnv=env;render()}
+   try{var env=JSON.parse(String(rd.result));if(!env||env.app!=='pwmemo'||!env.salt)throw 0;pendingEnv=env;render()}
    catch(e){toast('バックアップファイルとして読み込めません')}
   };
   rd.onerror=function(){toast('ファイルを読み込めませんでした')};
@@ -575,18 +531,40 @@ app.addEventListener('change',function(ev){
 app.addEventListener('keydown',function(ev){
  if(ev.key!=='Enter')return;
  var a=ev.target.dataset&&ev.target.dataset.enter;
- if(a==='unlock')actUnlock(false);else if(a==='setup')actSetup();else if(a==='import')actImport();
+ if(a==='import')actImport();else if(a==='migrate')actMigrate();else if(a==='prepare')actPrepare();
 });
 
-document.addEventListener('visibilitychange',function(){if(document.hidden)lockNow()});
-window.addEventListener('pagehide',lockNow);
+function onLeave(){
+ flushNow();
+ clearTimeout(clipTimer);clipTimer=null;
+ hidePw();
+}
+document.addEventListener('visibilitychange',function(){if(document.hidden)onLeave()});
+window.addEventListener('pagehide',onLeave);
 
 (function boot(){
  loadMeta();
- if(!(window.crypto&&crypto.subtle)){view={n:'nocrypto'};render();return}
  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
- view=(lsGet(LS_KEY)||lsGet(LS_PREV))?{n:'lock'}:{n:'setup'};
+ try{localStorage.setItem('pwmemo.probe','1');localStorage.removeItem('pwmemo.probe')}
+ catch(e){app.innerHTML='<div class="center"><h1>保存できません</h1><div class="banner red">この環境ではデータを保存できません。プライベートブラウズを解除してください。</div></div>';return}
+ var raw=lsGet(LS_KEY);
+ if(!raw&&lsGet(LS_PREV))raw=lsGet(LS_PREV);
+ if(!raw){
+  sess={state:defaultState(),unsaved:false};
+  writeNow();view={n:'folders'};render();return;
+ }
+ var env=null;
+ try{env=JSON.parse(raw)}catch(e){}
+ if(env&&env.app==='pwmemo'&&env.v===2&&env.state){
+  sess={state:normalize(env.state),unsaved:false};
+  dropEmpty();
+  view={n:'folders'};
+ }else if(env&&env.app==='pwmemo'&&env.salt&&env.data){
+  if(!hasCrypto()){view={n:'broken'}}else view={n:'migrate'};
+ }else{
+  view={n:'broken'};
+ }
  render();
 })();
 </script>
